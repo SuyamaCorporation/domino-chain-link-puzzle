@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Domino Chain Link Matching Puzzle</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  .domino-tile {
+    display:inline-flex; flex-direction:column; align-items:center;
+    background:#fef9c3; border:2px solid #92400e; border-radius:6px;
+    cursor:pointer; user-select:none; transition: all .15s;
+    width:48px; min-height:88px; position:relative;
+  }
+  .domino-tile.selected { border-color:#3b82f6; box-shadow:0 0 0 3px #3b82f680; background:#dbeafe; }
+  .domino-tile.hint { border-color:#22c55e; box-shadow:0 0 0 3px #22c55e80; }
+  .domino-half { width:100%; flex:1; display:flex; align-items:center; justify-content:center; }
+  .domino-divider { width:80%; height:2px; background:#92400e; margin:1px 0; }
+  .pip-grid { display:grid; gap:2px; }
+  .pip { background:#1e293b; border-radius:50%; width:7px; height:7px; }
+  .pip-placeholder { width:7px; height:7px; }
+  .chain-domino { display:inline-flex; background:#fef9c3; border:2px solid #92400e; border-radius:4px; margin:1px; }
+  .chain-half { width:24px; height:40px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:bold; color:#1e293b; }
+  .chain-div { width:2px; background:#92400e; }
+</style>
+</head>
+<body class="bg-slate-900 text-white min-h-screen">
+<script>
+function escapeHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
+// Generate full double-6 set
+function fullSet(){
+  const set=[];
+  for(let a=0;a<=6;a++) for(let b=a;b<=6;b++) set.push([a,b]);
+  return set;
+}
+
+function shuffle(arr){
+  for(let i=arr.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]];}
+  return arr;
+}
+
+let hand=[]; // dominoes in hand (each: {a,b,id,flipped:false})
+let chain=[]; // placed dominoes {a,b,id}
+let selected=null; // id of selected domino
+let hints=[];
+let gameWon=false;
+
+function newGame(){
+  gameWon=false; selected=null; chain=[]; hints=[];
+  const all=shuffle(fullSet());
+  const count=12;
+  hand=all.slice(0,count).map((d,i)=>({a:d[0],b:d[1],id:i,flipped:false}));
+  render();
+}
+
+function chainLeft(){ return chain.length===0?null:chain[0].a; }
+function chainRight(){ return chain.length===0?null:chain[chain.length-1].b; }
+
+function canPlace(tile, side){
+  if(chain.length===0) return true;
+  if(side==='left') return tile.a===chainLeft()||tile.b===chainLeft();
+  if(side==='right') return tile.a===chainRight()||tile.b===chainRight();
+  return false;
+}
+
+function getHints(){
+  if(chain.length===0) return hand.map(t=>t.id);
+  return hand.filter(t=>canPlace(t,'left')||canPlace(t,'right')).map(t=>t.id);
+}
+
+function selectTile(id){
+  if(gameWon) return;
+  const tile=hand.find(t=>t.id===id);
+  if(!tile) return;
+  if(selected===id){ selected=null; hints=[]; render(); return; }
+  selected=id;
+  hints=[];
+  render();
+}
+
+function placeLeft(){
+  if(selected===null||gameWon) return;
+  const tile=hand.find(t=>t.id===selected);
+  if(!tile) return;
+  if(chain.length===0){
+    chain.push({a:tile.a,b:tile.b,id:tile.id});
+    hand=hand.filter(t=>t.id!==selected);
+    selected=null; hints=[];
+    checkWin(); render(); return;
+  }
+  const cl=chainLeft();
+  let a=tile.a,b=tile.b;
+  if(b===cl){/* a→b, b matches left: place a on far-left, b connects */
+    chain.unshift({a,b,id:tile.id});
+  } else if(a===cl){
+    chain.unshift({a:b,b:a,id:tile.id});
+  } else { showMsg('No match!'); return; }
+  hand=hand.filter(t=>t.id!==selected);
+  selected=null; hints=[];
+  checkWin(); render();
+}
+
+function placeRight(){
+  if(selected===null||gameWon) return;
+  const tile=hand.find(t=>t.id===selected);
+  if(!tile) return;
+  if(chain.length===0){
+    chain.push({a:tile.a,b:tile.b,id:tile.id});
+    hand=hand.filter(t=>t.id!==selected);
+    selected=null; hints=[];
+    checkWin(); render(); return;
+  }
+  const cr=chainRight();
+  let a=tile.a,b=tile.b;
+  if(a===cr){
+    chain.push({a,b,id:tile.id});
+  } else if(b===cr){
+    chain.push({a:b,b:a,id:tile.id});
+  } else { showMsg('No match!'); return; }
+  hand=hand.filter(t=>t.id!==selected);
+  selected=null; hints=[];
+  checkWin(); render();
+}
+
+function showHints(){
+  hints=getHints();
+  render();
+}
+
+function checkWin(){
+  if(hand.length===0){ gameWon=true; }
+}
+
+function showMsg(msg){
+  const el=document.getElementById('msg');
+  if(el){el.textContent=msg; setTimeout(()=>{if(el)el.textContent='';},1500);}
+}
+
+function pipLayout(n){
+  // Returns array of 9 booleans for 3x3 grid
+  const layouts={
+    0:[0,0,0,0,0,0,0,0,0],
+    1:[0,0,0,0,1,0,0,0,0],
+    2:[1,0,0,0,0,0,0,0,1],
+    3:[1,0,0,0,1,0,0,0,1],
+    4:[1,0,1,0,0,0,1,0,1],
+    5:[1,0,1,0,1,0,1,0,1],
+    6:[1,0,1,1,0,1,1,0,1]
+  };
+  return layouts[n]||layouts[0];
+}
+
+function renderPips(n){
+  const layout=pipLayout(n);
+  return `<div class="pip-grid" style="grid-template-columns:repeat(3,7px);gap:2px;">${layout.map(p=>p?'<div class="pip"></div>':'<div class="pip-placeholder"></div>').join('')}</div>`;
+}
+
+function renderTile(tile){
+  const sel=selected===tile.id?' selected':'';
+  const hint=hints.includes(tile.id)?' hint':'';
+  return `<div class="domino-tile${sel}${hint}" onclick="selectTile(${tile.id})">
+    <div class="domino-half">${renderPips(tile.a)}</div>
+    <div class="domino-divider"></div>
+    <div class="domino-half">${renderPips(tile.b)}</div>
+  </div>`;
+}
+
+function renderChainTile(tile){
+  return `<div class="chain-domino">
+    <div class="chain-half">${escapeHtml(String(tile.a))}</div>
+    <div class="chain-div"></div>
+    <div class="chain-half">${escapeHtml(String(tile.b))}</div>
+  </div>`;
+}
+
+function render(){
+  const selTile=selected!==null?hand.find(t=>t.id===selected):null;
+  const canL=selTile&&(chain.length===0||canPlace(selTile,'left'));
+  const canR=selTile&&(chain.length===0||canPlace(selTile,'right'));
+
+  document.getElementById('app').innerHTML=`
+    <div class="max-w-4xl mx-auto p-4">
+      <div class="flex justify-between items-center mb-4">
+        <h1 class="text-2xl font-bold text-yellow-300">🁣 Domino Chain Puzzle</h1>
+        <div class="flex gap-2">
+          <button onclick="showHints()" class="bg-green-700 hover:bg-green-600 px-3 py-1 rounded text-sm">Hint</button>
+          <button onclick="newGame()" class="bg-blue-700 hover:bg-blue-600 px-3 py-1 rounded text-sm">New Game</button>
+        </div>
+      </div>
+      ${gameWon?`<div class="bg-green-800 border border-green-400 rounded-xl p-6 text-center text-2xl font-bold text-green-300 mb-4">🎉 You solved it! All dominoes chained!</div>`:''}
+      <div class="bg-slate-800 rounded-xl p-4 mb-4">
+        <div class="text-sm text-gray-400 mb-2">Chain (${chain.length} placed, ${hand.length} remaining):</div>
+        <div class="overflow-x-auto">
+          <div class="flex flex-wrap gap-0 min-h-12 items-center">
+            ${chain.length===0?'<span class="text-gray-500 italic text-sm">Select a domino from your hand to start the chain</span>':chain.map(renderChainTile).join('')}
+          </div>
+        </div>
+        ${chain.length>0?`<div class="flex gap-2 mt-3 text-sm text-gray-300">
+          <span>Left end: <strong class="text-yellow-300">${escapeHtml(String(chainLeft()))}</strong></span>
+          <span>|</span>
+          <span>Right end: <strong class="text-yellow-300">${escapeHtml(String(chainRight()))}</strong></span>
+        </div>`:''}
+      </div>
+      ${selTile?`<div class="bg-blue-900 border border-blue-500 rounded-xl p-3 mb-4 flex items-center gap-4 flex-wrap">
+        <span class="text-blue-300 font-semibold">Selected: [${escapeHtml(String(selTile.a))}|${escapeHtml(String(selTile.b))}]</span>
+        <button onclick="placeLeft()" ${canL?'':'disabled'} class="px-4 py-2 rounded font-semibold ${canL?'bg-green-600 hover:bg-green-500':'bg-gray-700 text-gray-500 cursor-not-allowed'}">← Place Left</button>
+        <button onclick="placeRight()" ${canR?'':'disabled'} class="px-4 py-2 rounded font-semibold ${canR?'bg-green-600 hover:bg-green-500':'bg-gray-700 text-gray-500 cursor-not-allowed'}">Place Right →</button>
+        <button onclick="selected=null;hints=[];render()" class="px-3 py-2 rounded bg-gray-700 hover:bg-gray-600 text-sm">Deselect</button>
+      </div>`:'<div class="bg-slate-800 rounded-xl p-3 mb-4 text-gray-400 text-sm">Click a domino tile to select it, then choose where to place it in the chain.</div>'}
+      <div id="msg" class="text-red-400 text-sm mb-2 h-5"></div>
+      <div class="text-sm text-gray-400 mb-2">Your Hand:</div>
+      <div class="flex flex-wrap gap-2">
+        ${hand.map(renderTile).join('')}
+      </div>
+    </div>`;
+}
+</script>
+<div id="app"></div>
+<script>newGame();</script>
+</body>
+</html>
